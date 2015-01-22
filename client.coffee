@@ -20,12 +20,112 @@ attendanceTypes =
 exports.render = !->
 	eventId = Page.state.get(0)
 	log 'eventId', eventId
-	if eventId
-		renderEvent eventId
+	if eventId < 0
+		renderEventDetails -eventId
+	else if eventId
+		renderEditEvent eventId
 	else
 		renderOverview()
 
-renderEvent = (eventId) !->
+renderEventDetails = (eventId) !->
+	Page.setTitle tr("Event info")
+	if Plugin.userIsAdmin() or Plugin.userId() is Db.shared.get('events', eventId, 'by')
+		Page.setActions [
+			label: tr("Remove")
+			icon: 'trash'
+			action: !->
+				Modal.confirm null, tr("Remove event?"), !->
+					Server.sync 'remove', eventId, !->
+						Db.shared.remove('events', eventId)
+					Page.back()
+			,
+				label: tr("Edit")
+				icon: 'edit'
+				action: !-> Page.nav eventId
+			]
+
+	event = Db.shared.ref('events', eventId)
+	Dom.div !->
+		Dom.style margin: '-8px -8px 0', backgroundColor: '#f8f8f8', borderBottom: '2px solid #ccc'
+
+		Dom.div !->
+			Dom.style
+				padding: '14px 14px 8px 14px'
+				backgroundColor: Datepicker.dayToColor(event.get('date'))
+				color: '#fff'
+
+			Dom.div !->
+				Dom.style fontSize: '160%', fontWeight: 'bold'
+				Dom.text event.get('title')
+
+			Dom.div !->
+				Dom.text Datepicker.timeToString(event.get('time'))
+				Dom.span !->
+					Dom.style padding: '0 4px'
+					Dom.text ' • '
+				Dom.text Datepicker.dayToString(event.get('date'))
+
+			Dom.div !->
+				Dom.style
+					fontSize: '70%'
+					color: '#ddd'
+					marginTop: '14px'
+				Dom.text tr("Added by %1", Plugin.userName(event.get('by')))
+				Dom.text " • "
+				Time.deltaText event.get('created')
+
+		# details
+		if details = event.get('details')
+			Dom.div !->
+				Dom.style padding: '6px'
+				Form.label !->
+					Dom.style marginTop: '12px'
+					Dom.text tr("Details")
+				Dom.div !->
+					Dom.style padding: '8px'
+					Dom.text details
+
+		# attendance info..
+		if event.get('rsvp')
+			Dom.div !->
+				Dom.style padding: '6px'
+				Form.label !->
+					Dom.style marginTop: '12px'
+					Dom.text tr("Attendance")
+				Dom.div !->
+					Dom.style fontSize: '80%', margin: '12px 0'
+					attendance =
+						1: []
+						2: []
+						3: []
+					event.forEach 'attendance', (user) !->
+						attendance[user.get()].push user.key()
+
+					if attendance[1].length + attendance[2].length + attendance[3].length is 0
+						Dom.div !->
+							Dom.style margin: '8px', color: '#aaa', fontStyle: 'italic'
+							Dom.text tr("No replies yet")
+					else
+						for type in [1, 2, 3]
+							if cnt = attendance[type].length
+								Dom.div !->
+									Dom.style fontWeight: 'bold', margin: '8px'
+									Dom.span attendanceTypes[type] + ' (' + cnt + '): '
+									for uid, k in attendance[type] then do (uid) !->
+										if k
+											Dom.span !->
+												Dom.style color: '#999'
+												Dom.text ', '
+										Dom.span !->
+											Dom.style whiteSpace: 'nowrap', color: '#999', padding: '2px 4px', margin: '-2px -4px'
+											Dom.text Plugin.userName(uid)
+											Dom.onTap (!-> Plugin.userInfo(uid))
+
+	Dom.div !->
+		Dom.style margin: '0 -8px'
+		require('social').renderComments eventId
+
+renderEditEvent = (eventId) !->
 	if eventId is 'new'
 		Page.setTitle tr("New event")
 		Form.setPageSubmit (values) !->
@@ -34,18 +134,13 @@ renderEvent = (eventId) !->
 			Page.back()
 
 	else
+		# check edit authorisation
+		return if !Plugin.userIsAdmin() and Plugin.userId() isnt Db.shared.get('events', eventId, 'by')
+
 		event = Db.shared.ref('events', eventId)
 
 		# maybe only allow admin/owner to edit, in other mode?
-		Page.setTitle tr("Event details")
-		Page.setActions
-			label: tr("Remove")
-			icon: 'trash'
-			action: !->
-				Modal.confirm null, tr("Remove event?"), !->
-					Server.sync 'remove', eventId, !->
-						Db.shared.remove(eventId)
-					Page.back()
+		Page.setTitle tr("Edit event")
 
 		Form.setPageSubmit (values) !->
 			Server.sync 'edit', eventId, values, !->
@@ -64,15 +159,6 @@ renderEvent = (eventId) !->
 				value: (if event then event.func('title') else null)
 				title: tr("Title")
 
-			if event
-				Dom.div !->
-					Dom.style
-						fontSize: '70%'
-						color: '#aaa'
-					Dom.text tr("Added by %1", Plugin.userName(event.get('by')))
-					Dom.text " • "
-					Time.deltaText event.get('created')
-
 		Form.sep()
 
 		# select date
@@ -87,22 +173,22 @@ renderEvent = (eventId) !->
 					Dom.div Datepicker.dayToString(value)
 
 			Dom.onTap !->
-				Modal.show tr("Select date"), !->
+				val = curDate
+				Modal.confirm tr("Select date"), !->
 					Datepicker.date
-						value: curDate
+						value: val
 						onChange: (v) !->
-							if v
-								handleChange v
-								curDate = v
+							val = v
+				, !->
+					handleChange val
+					curDate = val
 
 		Form.sep()
 
 		time = 0|(new Date()).getHours()*3600
 		curTime = (if event then event.get('time') else -1)
-		log 'curTime', curTime
 		Form.box !->
 			Dom.text tr("Event time")
-
 			[handleChange] = Form.makeInput
 				name: 'time'
 				value: curTime
@@ -110,18 +196,18 @@ renderEvent = (eventId) !->
 					Dom.div Datepicker.timeToString(value)
 
 			Dom.onTap !->
+				val = (if curTime<0 then null else curTime)
 				Modal.show tr("Enter time"), !->
 					Datepicker.time
-						value: (if curTime<0 then null else curTime)
+						value: val
 						onChange: (v) !->
-							if v
-								handleChange v
-								curTime = v
+							val = v
 				, (choice) !->
-					if choice is 'clear'
-						handleChange -1
-						curTime = -1
-				, ['clear', tr("All day"), 'ok', tr("Set")]
+					return if choice is 'cancel'
+					newVal = (if choice is 'clear' then -1 else val)
+					handleChange newVal
+					curTime = newVal
+				, ['cancel', tr("Cancel"), 'clear', tr("All day"), 'ok', tr("Set")]
 
 		Form.sep()
 
@@ -151,41 +237,6 @@ renderEvent = (eventId) !->
 				onChange: (v) !->
 					ask.set(v)
 
-			# attendance info..
-			if eventId isnt 'new' and ask.get()
-				Form.sep()
-
-				Form.label !->
-					Dom.style marginTop: '16px'
-					Dom.text tr("Attendance")
-				Dom.div !->
-					Dom.style fontSize: '80%'
-					attendance =
-						1: []
-						2: []
-						3: []
-					event.forEach 'attendance', (user) !->
-						attendance[user.get()].push user.key()
-
-					log 'attendance', attendance
-					for type in [1, 2, 3]
-						if cnt = attendance[type].length
-							Dom.div !->
-								Dom.style fontWeight: 'bold', margin: '8px'
-								Dom.span attendanceTypes[type] + ' (' + cnt + '): '
-								for uid, k in attendance[type] then do (uid) !->
-									if k
-										Dom.span !->
-											Dom.style color: '#999'
-											Dom.text ', '
-									Dom.span !->
-										Dom.style whiteSpace: 'nowrap', color: '#999', padding: '2px 4px', margin: '-2px -4px'
-										Dom.text Plugin.userName(uid)
-										Dom.onTap (!-> Plugin.userInfo(uid))
-
-
-	if eventId isnt 'new'
-		require('social').renderComments eventId
 
 renderOverview = !->
 	log 'renderOverview'
@@ -208,7 +259,7 @@ renderOverview = !->
 					width: '30px'
 					textAlign: 'center'
 					textShadow: '0 1px 0 #fff'
-					color: (if att.get() in [1, 3] then '#555' else '#999')
+					color: Datepicker.dayToColor(event.get('date'))
 
 				date = new Date(event.get('time')*1000)
 				Dom.text Datepicker.dayToDayString(event.get('date')).toUpperCase()
@@ -234,8 +285,8 @@ renderOverview = !->
 									overflow: 'hidden'
 									textOverflow: 'ellipsis'
 									fontSize: '120%'
-									fontWeight: 'bold'
-									color: (if att.get() in [1, 3] then '#555' else '#999')
+									fontWeight: (if att.get() in [1, 3] then 'bold' else 'normal')
+									color: (if att.get() in [1, 3] then Datepicker.dayToColor(event.get('date')) else '#888')
 								Dom.text event.get('title')
 
 							if unread = require('social').newComments(event.key())
@@ -244,7 +295,10 @@ renderOverview = !->
 
 						if (time = event.get('time'))? and time>=0
 							Dom.div !->
-								Dom.style fontSize: '75%', fontWeight: 'bold', color: (if att.get() in [1, 3] then '#555' else '#999')
+								Dom.style
+									fontSize: '75%'
+									fontWeight: (if att.get() in [1, 3] then 'bold' else 'normal')
+									color: (if att.get() in [1, 3] then Datepicker.dayToColor(event.get('date')) else '#888')
 								Dom.text Datepicker.timeToString(time)
 
 						if details = event.get('details')
@@ -258,7 +312,7 @@ renderOverview = !->
 									textOverflow: 'ellipsis'
 								Dom.text details
 
-					Dom.onTap !-> Page.nav event.key()
+					Dom.onTap !-> Page.nav -event.key()
 
 				if event.get('rsvp')
 					Dom.div !->
@@ -298,7 +352,6 @@ renderOverview = !->
 								Dom.text label
 								Dom.span !->
 									Dom.style color: '#aaa'
-									log 'nr for', type, attendanceCnt.get(type)
 									if nr = attendanceCnt.get(type)
 										Dom.text ' ('+nr+')'
 								Dom.onTap !->

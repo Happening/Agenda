@@ -38,6 +38,13 @@ exports.dayToString = (day) ->
 	d = new Date(day*864e5)
 	dayNames[d.getUTCDay()]+' '+d.getUTCDate()+' '+monthNames[d.getUTCMonth()]+' '+d.getUTCFullYear()
 
+exports.dayToColor = (day) ->
+	d = new Date(day*864e5)
+	if d.getUTCDay() in [0, 6] # weekend
+		'#448E80'
+	else
+		'#2A6A99'
+
 exports.dayToDayString = (day) ->
 	d = new Date(day*864e5)
 	dayNames[d.getUTCDay()]
