@@ -1,6 +1,8 @@
 Datepicker = require 'datepicker'
+Loglist = require 'loglist'
 Db = require 'db'
 Dom = require 'dom'
+Social = require 'social'
 Modal = require 'modal'
 Time = require 'time'
 Form = require 'form'
@@ -12,6 +14,7 @@ Server = require 'server'
 Ui = require 'ui'
 {tr} = require 'i18n'
 
+today = 0|(((new Date()).getTime() - (new Date()).getTimezoneOffset()*6e4) / 864e5)
 attendanceTypes =
 	1: tr "Going"
 	2: tr "Not going"
@@ -20,7 +23,9 @@ attendanceTypes =
 exports.render = !->
 	eventId = Page.state.get(0)
 	log 'eventId', eventId
-	if eventId < 0
+	if eventId is 'past'
+		renderOverview true
+	else if eventId < 0
 		renderEventDetails -eventId
 	else if eventId
 		renderEditEvent eventId
@@ -101,36 +106,68 @@ renderEventDetails = (eventId) !->
 					event.forEach 'attendance', (user) !->
 						attendance[user.get()].push user.key()
 
-					if attendance[1].length + attendance[2].length + attendance[3].length is 0
+					userAtt = event.get('attendance', Plugin.userId())
+					for type in [1, 2, 3] then do (type) !->
+						chosen = userAtt is type
 						Dom.div !->
-							Dom.style margin: '8px', color: '#aaa', fontStyle: 'italic'
-							Dom.text tr("No replies yet")
-					else
-						for type in [1, 2, 3]
-							if cnt = attendance[type].length
-								Dom.div !->
-									Dom.style fontWeight: 'bold', margin: '8px'
-									Dom.span attendanceTypes[type] + ' (' + cnt + '): '
-									for uid, k in attendance[type] then do (uid) !->
-										if k
-											Dom.span !->
-												Dom.style color: '#999'
-												Dom.text ', '
+							Dom.style Box: 'top', fontWeight: 'bold', margin: '12px 8px'
+							Dom.div !->
+								Dom.style
+									width: '70px'
+									textAlign: 'right'
+								Dom.span !->
+									Dom.style
+										color: Colors.highlight
+										padding: '6px 8px'
+										margin: '-6px -4px -6px -8px'
+										borderRadius: '2px'
+										fontWeight: (if chosen then 'bold' else 'normal')
+										opacity: (if userAtt? and !chosen then '0.5' else '1')
+									Dom.text attendanceTypes[type]
+									Dom.onTap !->
+										Server.sync 'attendance', event.key(), (if chosen then 0 else type), !->
+											event.set 'attendance', Plugin.userId(), (if chosen then null else type)
+
+							Dom.div !->
+								Dom.style padding: '0 6px', color: '#999'
+								Dom.text '(' + attendance[type].length + ')'
+
+							Dom.div !->
+								Dom.style Flex: 1
+
+								for uid, k in attendance[type] then do (uid) !->
+									if k
 										Dom.span !->
-											Dom.style whiteSpace: 'nowrap', color: '#999', padding: '2px 4px', margin: '-2px -4px'
-											Dom.text Plugin.userName(uid)
-											Dom.onTap (!-> Plugin.userInfo(uid))
+											Dom.style color: '#999'
+											Dom.text ', '
+									Dom.span !->
+										Dom.style
+											whiteSpace: 'nowrap'
+											color: (if Plugin.userId() is +uid then 'inherit' else '#999')
+											padding: '2px 4px'
+											margin: '-2px -4px'
+										Dom.text Plugin.userName(uid)
+										Dom.onTap (!-> Plugin.userInfo(uid))
 
 	Dom.div !->
 		Dom.style margin: '0 -8px'
-		require('social').renderComments eventId
+		Social.renderComments eventId
 
 renderEditEvent = (eventId) !->
 	if eventId is 'new'
 		Page.setTitle tr("New event")
 		Form.setPageSubmit (values) !->
 			Server.sync 'new', values, !->
-				# predict some stuff
+				maxId = Db.shared.incr('events', 'maxId')
+				Db.shared.set 'events', maxId,
+					title: values.title||"(No title)"
+					details: values.details
+					date: values.date
+					time: values.time
+					rsvp: values.rsvp
+					created: 0|(new Date()/1000)
+					by: Plugin.userId()
+					attendance: {}
 			Page.back()
 
 	else
@@ -144,10 +181,9 @@ renderEditEvent = (eventId) !->
 
 		Form.setPageSubmit (values) !->
 			Server.sync 'edit', eventId, values, !->
-				# predict some stuff
+				Db.shared.merge 'events', eventId, values
 			Page.back()
 
-	# (added by, when?), title, details, time (and date?), ask if people are going, show who's (not/maybe) going, reminder, comments
 	Dom.div !->
 		Dom.style margin: '-8px -8px 0', backgroundColor: '#f8f8f8', borderBottom: '2px solid #ccc'
 
@@ -162,7 +198,6 @@ renderEditEvent = (eventId) !->
 		Form.sep()
 
 		# select date
-		today = 0|(((new Date()).getTime() - (new Date()).getTimezoneOffset()*6e4) / 864e5)
 		curDate = event?.get('date')||today
 		Form.box !->
 			Dom.text tr("Event date")
@@ -228,6 +263,63 @@ renderEditEvent = (eventId) !->
 
 		Form.sep()
 
+		Form.box !->
+			remind = (if event then event.get('remind') else 86400)
+
+			getRemindText = (r) ->
+				if r is -1
+					tr("No reminder")
+				else if r is 0
+					tr("At time of event")
+				else if r is 600
+					tr("10 minutes before")
+				else if r is 3600
+					tr("1 hour before")
+				else if r is 86400
+					tr("1 day before", r)
+				else if r is 604800
+					tr("1 week before", r)
+
+			Dom.text tr("Remind members")
+			[handleChange] = Form.makeInput
+				name: 'remind'
+				value: remind
+				content: (value) !->
+					Dom.div !->
+						Dom.text getRemindText(value)
+
+			Dom.onTap !->
+				Modal.show tr("Remind members"), !->
+					Dom.style width: '60%'
+					opts = [0, 600, 3600, 86400, 604800, -1]
+					Dom.div !->
+						Dom.style
+							maxHeight: '45.5%'
+							overflow: 'auto'
+							_overflowScrolling: 'touch'
+							backgroundColor: '#eee'
+							margin: '-12px'
+						for rem in opts then do (rem) !->
+							Ui.item !->
+								Dom.text getRemindText(rem)
+								if remind is rem
+									Dom.style fontWeight: 'bold'
+
+									Dom.div !->
+										Dom.style
+											Flex: 1
+											padding: '0 10px'
+											textAlign: 'right'
+											fontSize: '150%'
+											color: Plugin.colors().highlight
+										Dom.text "✓"
+								Dom.onTap !->
+									handleChange rem
+									remind = rem
+									Modal.remove()
+
+		Form.sep()
+
 		Obs.observe !->
 			ask = Obs.create (if event then event.get('rsvp') else true)
 			Form.check
@@ -237,17 +329,64 @@ renderEditEvent = (eventId) !->
 				onChange: (v) !->
 					ask.set(v)
 
+		if eventId is 'new'
+			Form.sep()
+			Form.check
+				name: 'notify'
+				value: true
+				text: tr("Notify about this event now")
 
-renderOverview = !->
+
+renderOverview = (showPast) !->
 	log 'renderOverview'
-	Page.setFooter
-		label: tr "+ Add event"
-		action: !-> Page.nav 'new'
-
 	events = Db.shared.ref 'events'
+
+	if showPast
+		Page.setTitle tr("Past events")
+	else
+		Dom.section !->
+			Dom.style margin: '0 10px 14px 40px', backgroundColor: '#f6f6f6', color: Colors.highlight
+			Dom.div !->
+				Dom.style padding: '8px', margin: '-8px', borderRadius: '2px', textAlign: 'center', fontSize: '75%'
+				Dom.div !->
+					Dom.style Box: 'middle', minHeight: '20px'
+
+					Dom.div !->
+						Dom.style Flex: 1
+						Dom.text tr("Show past events")
+
+					pastUnread = Obs.create(0)
+					events.observeEach (event) !->
+						cnt = Social.newComments(event.key())
+						pastUnread.incr cnt
+						Obs.onClean !->
+							pastUnread.incr -cnt
+					, (event) ->
+						if +event.key() and event.get('date')<today
+							[event.get('date'), event.get('time')]
+					Obs.observe !->
+						if pastUnread.get()
+							Ui.unread pastUnread.get()
+
+				Dom.onTap !-> Page.nav 'past'
+
+		Page.setFooter
+			label: tr "+ Add event"
+			action: !-> Page.nav 'new'
+
+
+	isEmpty = Obs.create(true)
+	eventCnt = 0
+	Obs.observe !->
+		if isEmpty.get()
+			Ui.emptyText (if showPast then tr("No past events") else tr("No events"))
 
 	events.observeEach (event) !->
 		Dom.div !->
+			isEmpty.set !++eventCnt
+			Obs.onClean !->
+				isEmpty.set !++eventCnt
+
 			Dom.style Box: 'top'
 			att = event.ref 'attendance', Plugin.userId()
 
@@ -270,7 +409,7 @@ renderOverview = !->
 				Dom.br()
 				Dom.text Datepicker.dayToMonthString(event.get('date')).toUpperCase()
 			Dom.section !->
-				Dom.style Flex: 1
+				Dom.style Flex: 1, margin: '0 10px 14px 0'
 				Dom.div !->
 					Dom.style Box: 'middle', padding: '8px', margin: '-8px', borderRadius: '2px 2px 0 0', minHeight: '36px'
 
@@ -286,10 +425,10 @@ renderOverview = !->
 									textOverflow: 'ellipsis'
 									fontSize: '120%'
 									fontWeight: (if att.get() in [1, 3] then 'bold' else 'normal')
-									color: (if att.get() in [1, 3] then Datepicker.dayToColor(event.get('date')) else '#888')
+									color: (if att.get() in [1, 3] then Datepicker.dayToColor(event.get('date')) else '#777')
 								Dom.text event.get('title')
 
-							if unread = require('social').newComments(event.key())
+							if unread = Social.newComments(event.key())
 								Dom.div !->
 									Ui.unread unread
 
@@ -298,7 +437,7 @@ renderOverview = !->
 								Dom.style
 									fontSize: '75%'
 									fontWeight: (if att.get() in [1, 3] then 'bold' else 'normal')
-									color: (if att.get() in [1, 3] then Datepicker.dayToColor(event.get('date')) else '#888')
+									color: (if att.get() in [1, 3] then Datepicker.dayToColor(event.get('date')) else '#777')
 								Dom.text Datepicker.timeToString(time)
 
 						if details = event.get('details')
@@ -358,5 +497,5 @@ renderOverview = !->
 									Server.sync 'attendance', event.key(), (if chosen then 0 else type), !->
 										event.set 'attendance', Plugin.userId(), (if chosen then null else type)
 	, (event) ->
-		if +event.key()
+		if +event.key() and (if showPast then event.get('date')<today else event.get('date')>=today)
 			[event.get('date'), event.get('time')]

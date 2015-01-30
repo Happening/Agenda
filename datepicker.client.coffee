@@ -31,12 +31,22 @@ monthNames = [
 	tr 'Dec'
 ]
 
-exports.dayToDate = dayToDate = (day) ->
-	new Date(day*864e5)
-
 exports.dayToString = (day) ->
 	d = new Date(day*864e5)
 	dayNames[d.getUTCDay()]+' '+d.getUTCDate()+' '+monthNames[d.getUTCMonth()]+' '+d.getUTCFullYear()
+
+exports.timeToString = (time) ->
+	if !time?
+		tr("None")
+	else if time<0
+		tr("All day")
+	else
+		minutes = (time/60)%60
+		minutes = '0' + minutes if minutes.toString().length is 1
+		(0|(time/3600))+':'+minutes
+
+exports.dayToDate = dayToDate = (day) ->
+	new Date(day*864e5)
 
 exports.dayToColor = (day) ->
 	d = new Date(day*864e5)
@@ -57,15 +67,6 @@ exports.dayToDayNr = (day) ->
 	d = new Date(day*864e5)
 	d.getUTCDate()
 
-exports.timeToString = (time) ->
-	if !time?
-		tr("None")
-	else if time<0
-		tr("All day")
-	else
-		minutes = (time/60)%60
-		minutes = '0' + minutes if minutes.toString().length is 1
-		(0|(time/3600))+':'+minutes
 
 exports.date = date = (opts) ->
 	opts = {} if typeof opts!='object'

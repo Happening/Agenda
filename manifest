@@ -1,5 +1,5 @@
 name: Agenda
-description: Get notified about group events and see who's going
+description: Get notified about group events and see who's going.
 icon: calendar5
 store: 800
 api: 2
