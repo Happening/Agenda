@@ -1,7 +1,7 @@
-Example
-=======
+Agenda
+======
 
-An example plugin for Happening.
+Get notified about group events and see who's going.
 
 In case you don't know what this is about: Happening is a group app for iOS and Android, that allows you to create your own plugins in minutes. To get started signup at: https://develop.happening.im
 

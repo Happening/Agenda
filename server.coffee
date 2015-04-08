@@ -29,6 +29,12 @@ monthNames = [
 	tr 'Dec'
 ]
 
+# convert daycount to 00:00 unix timestamp
+dayToUnix = (day) ->
+	d = new Date(day*864e5)
+	offset = d.getTimezoneOffset() * 60 # seconds
+	day * 86400 + offset
+
 dayToString = (day) ->
 	d = new Date(day*864e5)
 	dayNames[d.getUTCDay()]+' '+d.getUTCDate()+' '+monthNames[d.getUTCMonth()]+' '+d.getUTCFullYear()
@@ -65,13 +71,12 @@ exports.client_new = (values) !->
 		whenText = (if values.time>=0 then timeToString(values.time)+' ' else '')
 		whenText += dayToString(values.date)
 		Event.create
-			unit: 'event'
+			#unit: 'event'
 			text: "#{Plugin.userName()} added an event: #{values.title} (#{whenText})"
-			read: [Plugin.userId()]
+			sender: Plugin.userId()
 
 	setRemindTimer maxId
  
-
 setRemindTimer = (eventId) !->
 	event = Db.shared.get 'events', eventId
 	remind = event?.remind ? 86400
@@ -80,23 +85,18 @@ setRemindTimer = (eventId) !->
 	log 'event, remind, Plugin.time()', JSON.stringify(event), remind, Plugin.time()
 	return if !event or remind<0
 
+	# -1 means no reminder
+	if remind >= 0
+		startTime = dayToUnix(event.date)*1000 - remind*1000
+		if remind >= 86400 # a day (or more) in advance
+			startTime += (12*3600*1000)
+		else if event.time>0
+			startTime += event.time*1000
 
-	offset = (new Date(event.date*864e5)).getTimezoneOffset() * 60
-		# find timezone offset at eventdate, in seconds
-
-	absTime = 0
-	if remind >= 86400
-		absTime = event.date*864e5 + (12*3600*1000) - remind*1000
-			# remind around 12:00
-	else if remind >= 0
-		eventTime = (if event.time>0 then event.time else 0)
-		absTime = event.date*864e5 + eventTime*1000 - remind*1000
-
-	remindTimeout = absTime - Plugin.time()*1000 + offset*1000
-
-	if remindTimeout>0
-		log 'setting remindTimeout', remindTimeout
-		Timer.set remindTimeout, 'reminder', eventId
+		remindTimeout = startTime - Plugin.time()*1000
+		if remindTimeout>0
+			log 'setting remindTimeout', remindTimeout
+			Timer.set remindTimeout, 'reminder', eventId
 
 exports.reminder = (eventId) !->
 	event = Db.shared.get 'events', eventId
