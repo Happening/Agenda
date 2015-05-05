@@ -166,6 +166,7 @@ renderEditEvent = (eventId) !->
 			values.details = Form.smileyToEmoji values.details
 			Server.sync 'new', values, !->
 				maxId = Db.shared.incr('events', 'maxId')
+				Event.subscribe [maxId]
 				Db.shared.set 'events', maxId,
 					title: values.title||"(No title)"
 					details: values.details
@@ -437,6 +438,17 @@ renderOverview = (showPast) !->
 						Dom.div !->
 							Dom.style Box: 'middle'
 							Dom.div !->
+								itemColor = '#777'
+								if Event.isNew(event.get('created'))
+									# new event
+									itemColor = '#5b0'
+								else if (!event.get('rsvp') or att.get() isnt 2) and (reminded = event.get('reminded')) and Event.isNew(reminded)
+									# user probably has had a reminder
+									itemColor = '#5b0'
+								else if att.get() in [1, 3]
+									# attending, colorize a bit
+									itemColor = Datepicker.dayToColor(event.get('date'))
+
 								Dom.style
 									Flex: 1
 									whiteSpace: 'nowrap'
@@ -444,7 +456,7 @@ renderOverview = (showPast) !->
 									textOverflow: 'ellipsis'
 									fontSize: '120%'
 									fontWeight: (if att.get() in [1, 3] then 'bold' else 'normal')
-									color: (if Event.isNew(event.get('created')) then '#5b0' else (if att.get() in [1, 3] then Datepicker.dayToColor(event.get('date')) else '#777'))
+									color: itemColor
 								Dom.userText event.get('title')
 
 							Event.renderBubble [event.key()]

@@ -49,6 +49,8 @@ timeToString = (time) ->
 		minutes = '0' + minutes if minutes.toString().length is 1
 		(0|(time/3600))+':'+minutes
 
+exports.getTitle = -> # will otherwise be confused with adding an event
+
 exports.onInstall = ->
 	# anything to do?
 
@@ -115,6 +117,7 @@ exports.reminder = (eventId) !->
 			include.push userId unless event.attendance[userId] is 2
 		eventObj.for = include
 	Event.create eventObj unless event.rsvp and include.length is 0
+	Db.shared.set 'events', eventId, 'reminded', Math.round(Plugin.time())
 
 exports.client_remove = (eventId) !->
 	return if !Plugin.userIsAdmin() and Plugin.userId() isnt Db.shared.get('events', eventId, 'by')
