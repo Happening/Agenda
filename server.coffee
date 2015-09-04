@@ -54,7 +54,7 @@ exports.getTitle = -> # will otherwise be confused with adding an event
 exports.onInstall = ->
 	# anything to do?
 
-exports.client_new = (values) !->
+exports.client_new = (values, onCreated) !->
 	event =
 		title: values.title||"(No title)"
 		details: values.details
@@ -78,6 +78,7 @@ exports.client_new = (values) !->
 			sender: Plugin.userId()
 
 	setRemindTimer maxId
+	onCreated.reply maxId
  
 setRemindTimer = (eventId) !->
 	event = Db.shared.get 'events', eventId

@@ -164,9 +164,9 @@ renderEditEvent = (eventId) !->
 		Form.setPageSubmit (values) !->
 			values.title = Form.smileyToEmoji values.title
 			values.details = Form.smileyToEmoji values.details
-			Server.sync 'new', values, !->
+			onCreated = (id) !-> Event.subscribe [id]
+			Server.sync 'new', values, onCreated, !->
 				maxId = Db.shared.incr('events', 'maxId')
-				Event.subscribe [maxId]
 				Db.shared.set 'events', maxId,
 					title: values.title||"(No title)"
 					details: values.details
@@ -368,20 +368,21 @@ renderOverview = (showPast) !->
 						Dom.style Flex: 1
 						Dom.text tr("Show past events")
 
-					pastUnread = Obs.create([0,0,0])
+					pastUnread = Obs.create([null,null,0,0,0])
 
 					events.observeEach (event) !->
 						u = Event.getUnread([event.key()], true)
-						pastUnread.modify (v) -> [ v[0]+u[0], v[1]+u[1], v[2]+u[2] ]
-						Obs.onClean !->
-							pastUnread.modify (v) -> [ v[0]-u[0], v[1]-u[1], v[2]-u[2] ]
+						if u[2]?
+							pastUnread.modify (v) -> [ null, null, v[2]+u[3], v[3]+u[4], v[4]+u[5] ]
+							Obs.onClean !->
+								pastUnread.modify (v) -> [ null, null, v[2]-u[3], v[3]-u[4], v[4]-u[5] ]
 					, (event) ->
 						if +event.key() and event.get('date')<today
 							[event.get('date'), event.get('time')]
 
 					Obs.observe !->
 						log 'renderBubble', pastUnread.get()
-						Event.renderBubble false, data: pastUnread.get()
+						Event.renderBubbleRaw pastUnread.get()
 
 				Dom.onTap !-> Page.nav 'past'
 
@@ -527,7 +528,9 @@ renderOverview = (showPast) !->
 									Server.sync 'attendance', event.key(), (if chosen then 0 else type), !->
 										event.set 'attendance', Plugin.userId(), (if chosen then null else type)
 
-		log 'observeEach', event.key()
+		key = event.key()
+		#log 'observeEach', key, (new Error).stack
+		Obs.onClean !-> log '/observeEach', key
 	, (event) ->
 		if +event.key() and (if showPast then event.get('date')<today else event.get('date')>=today)
 			[event.get('date'), event.get('time')]
