@@ -74,14 +74,15 @@ renderEventDetails = (eventId) !->
 					Dom.text ' • '
 				Dom.text Datepicker.dayToString(event.get('date'))
 
-			Dom.div !->
-				Dom.style
-					fontSize: '70%'
-					color: '#ddd'
-					marginTop: '14px'
-				Dom.text tr("Added by %1", Plugin.userName(event.get('by')))
-				Dom.text " • "
-				Time.deltaText event.get('created')
+			if addedBy = event.get('by') # due to a plugindata bug this data can be missing
+				Dom.div !->
+					Dom.style
+						fontSize: '70%'
+						color: '#ddd'
+						marginTop: '14px'
+					Dom.text tr("Added by %1", Plugin.userName(addedBy))
+					Dom.text " • "
+					Time.deltaText event.get('created')
 
 		# details
 		if details = event.get('details')
@@ -427,6 +428,8 @@ renderOverview = (showPast) !->
 
 			Dom.style Box: 'top'
 			att = event.ref 'attendance', Plugin.userId()
+			if !att? # due to a plugindata bug attendance data can be missing
+				att = Obs.create()
 
 			renderDate event.get('date')
 			Dom.section !->
