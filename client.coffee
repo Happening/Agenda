@@ -55,7 +55,7 @@ renderEventDetails = (eventId) !->
 			]
 
 	Dom.div !->
-		Dom.style margin: '-8px -8px 0', backgroundColor: '#f8f8f8', borderBottom: '2px solid #ccc'
+		Dom.style margin: '0', backgroundColor: '#f8f8f8', borderBottom: '2px solid #ccc'
 
 		Dom.div !->
 			Dom.style
@@ -196,10 +196,8 @@ renderEditEvent = (eventId) !->
 			Page.back()
 
 	Dom.div !->
-		Dom.style margin: '-8px -8px 0', backgroundColor: '#f8f8f8', borderBottom: '2px solid #ccc'
-
 		Form.box !->
-			Dom.style padding: '8px'
+			Dom.style padding: '8px', borderRight: 'none'
 			Form.input
 				name: 'title'
 				text: tr "Title"
@@ -262,7 +260,7 @@ renderEditEvent = (eventId) !->
 			Dom.text tr("Details")
 
 		Form.box !->
-			Dom.style padding: '8px'
+			Dom.style padding: '8px', borderRight: 'none'
 			Form.text
 				name: 'details'
 				text: tr "Details about the event"
@@ -352,6 +350,7 @@ mapIncr = (o, key, delta) !->
 		o.modify key, (v) -> v - delta
 
 renderOverview = (showPast) !->
+	Page.setCardBackground()
 	log 'renderOverview'
 	events = Db.shared.ref 'events'
 
@@ -359,9 +358,9 @@ renderOverview = (showPast) !->
 		Page.setTitle tr("Past events")
 	else
 		Dom.section !->
-			Dom.style margin: '0 10px 14px 40px', backgroundColor: '#f6f6f6', color: Colors.highlight
+			Dom.style margin: '0 10px 14px 40px', marginTop: '8px', backgroundColor: '#f6f6f6', color: Colors.highlight
 			Dom.div !->
-				Dom.style padding: '8px', margin: '-8px', borderRadius: '2px', textAlign: 'center', fontSize: '75%'
+				Dom.style padding: '8px', borderRadius: '2px', textAlign: 'center', fontSize: '75%'
 				Dom.div !->
 					Dom.style Box: 'middle', minHeight: '20px'
 
@@ -433,7 +432,7 @@ renderOverview = (showPast) !->
 
 			renderDate event.get('date')
 			Dom.section !->
-				Dom.style Flex: 1, margin: '0 10px 14px 0'
+				Dom.style Flex: 1, margin: '0 10px 14px 0', padding: '8px'
 				Dom.div !->
 					Dom.style Box: 'middle', padding: '8px', margin: '-8px', borderRadius: '2px 2px 0 0', minHeight: '36px'
 
