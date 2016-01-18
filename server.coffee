@@ -1,3 +1,4 @@
+Comments = require 'comments'
 Db = require 'db'
 Plugin = require 'plugin'
 Event = require 'event'
@@ -108,20 +109,36 @@ exports.reminder = (eventId) !->
 	whenText = (if event.time>=0 then timeToString(event.time)+' ' else '')
 	whenText += dayToString(event.date)
 
-	log "event reminder #{event.title} (#{whenText})"
-	eventObj =
-		unit: 'event'
-		text: "Event reminder: #{event.title} (#{whenText})"
+
 	include = []
 	if event.rsvp
 		for userId in Plugin.userIds()
 			include.push userId unless event.attendance[userId] is 2
-		eventObj.for = include
-	Event.create eventObj unless event.rsvp and include.length is 0
-	Db.shared.set 'events', eventId, 'reminded', Math.round(Plugin.time())
+
+	log "event reminder #{event.title} (#{whenText})"
+	Comments.post
+		legacyStore: eventId
+		s: 'remind'
+		v: whenText
+		path: eventId
+		pushText: "Event reminder: #{event.title} (#{whenText})"
+		for: include
+
+	# eventObj =
+	# 	unit: 'event'
+	# 	text: "Event reminder: #{event.title} (#{whenText})"
+	
+	# Event.create eventObj unless event.rsvp and include.length is 0
+	# Db.shared.set 'events', eventId, 'reminded', Math.round(Plugin.time())
 
 exports.client_remove = (eventId) !->
 	return if !Plugin.userIsAdmin() and Plugin.userId() isnt Db.shared.get('events', eventId, 'by')
+
+	log "comments post remove"
+	Comments.post
+		s: 'remove'
+		v: Db.shared.get 'events', eventId, 'title'
+
 	Db.shared.remove('events', eventId)
 	Timer.cancel 'reminder', eventId
 
@@ -129,6 +146,11 @@ exports.client_edit = (eventId, values) !->
 	return if !Plugin.userIsAdmin() and Plugin.userId() isnt Db.shared.get('events', eventId, 'by')
 	oldEvent = Db.shared.get('events', eventId)
 	Db.shared.merge('events', eventId, values)
+
+	log "comments post edit"
+	Comments.post
+		legacyStore: eventId
+		s: 'edit'
 
 	# possibly re-set the reminder
 	if values.remind isnt oldEvent.remind or values.date isnt oldEvent.date or values.time isnt oldEvent.time
